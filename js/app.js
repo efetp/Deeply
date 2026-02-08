@@ -17,6 +17,7 @@ let isRunning = false;
 let isBreak = false;
 let selectedTodoId = null;
 let selectedCategory = "university";
+let editingTodoId = null;
 
 // --- DOM Elements ---
 const timerTime = document.getElementById("timer-time");
@@ -238,11 +239,14 @@ function openModal() {
 function closeModal() {
     taskModal.classList.add("hidden");
     todoForm.reset();
+    editingTodoId = null;
     selectedCategory = "university";
     catButtons.forEach(b => b.classList.remove("active"));
     document.querySelector('[data-category="university"]').classList.add("active");
     customCategoryInput.classList.add("hidden");
     courseGroup.classList.remove("hidden");
+    document.querySelector(".modal-title").textContent = "New Task";
+    document.querySelector(".submit-task-btn").textContent = "Add Task";
 }
 
 function setCategory(category) {
@@ -280,6 +284,24 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
+function formatDeadline(dateStr) {
+    if (!dateStr) return "";
+    const deadline = new Date(dateStr + "T00:00:00");
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const diffDays = Math.ceil((deadline - today) / (1000 * 60 * 60 * 24));
+
+    const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const label = `${months[deadline.getMonth()]} ${deadline.getDate()}`;
+
+    let urgencyClass = "";
+    if (diffDays < 0) urgencyClass = "deadline-overdue";
+    else if (diffDays <= 1) urgencyClass = "deadline-today";
+    else if (diffDays <= 3) urgencyClass = "deadline-soon";
+
+    return { label, urgencyClass };
+}
+
 function renderTodo(todo) {
     const minutes = todo.estimated_minutes;
     const pomos = calcPomodoros(minutes);
@@ -300,6 +322,12 @@ function renderTodo(todo) {
     if (todo.priority) tagsHtml += `<span class="tag tag-priority-${todo.priority}">${todo.priority}</span>`;
     if (todo.urgency) tagsHtml += `<span class="tag tag-urgency-${todo.urgency}">${todo.urgency}</span>`;
 
+    let deadlineHtml = "";
+    if (todo.deadline) {
+        const dl = formatDeadline(todo.deadline);
+        deadlineHtml = `<div class="todo-deadline ${dl.urgencyClass}"><span class="deadline-label">Due</span><span class="deadline-date">${dl.label}</span></div>`;
+    }
+
     li.innerHTML = `
         <input type="checkbox" ${todo.completed ? "checked" : ""}>
         <div class="todo-info">
@@ -312,7 +340,11 @@ function renderTodo(todo) {
                 <span class="pomo-badge deep"><span class="pomo-count">${pomos.deep}</span><span class="pomo-label"> deep</span></span>
             </div>
         </div>
+        ${deadlineHtml}
         <div class="todo-actions">
+            <button class="todo-action-btn edit-btn" title="Edit task">
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M8.5 1.5l2 2M1 11l.7-2.8L9.2 .7l2 2L3.8 10.3 1 11z" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
             <button class="todo-action-btn select-btn" title="Work on this task">${isSelected ? "Working" : "Select"}</button>
             <button class="todo-action-btn delete-btn" title="Delete task">X</button>
         </div>
@@ -320,6 +352,9 @@ function renderTodo(todo) {
 
     li.querySelector("input[type=checkbox]").addEventListener("change", (e) => {
         toggleTodo(todo.id, e.target.checked);
+    });
+    li.querySelector(".edit-btn").addEventListener("click", () => {
+        editTodo(todo.id);
     });
     li.querySelector(".select-btn").addEventListener("click", () => {
         selectTodo(todo.id, todo.name);
@@ -350,9 +385,68 @@ function addTodo(formData) {
         course: formData.course,
         priority: formData.priority,
         urgency: formData.urgency,
+        deadline: formData.deadline,
         completed: false,
         created_at: new Date().toISOString(),
     });
+    saveData(data);
+    loadTodos();
+}
+
+function editTodo(id) {
+    const data = loadData();
+    const todo = data.todos.find(t => t.id === id);
+    if (!todo) return;
+
+    editingTodoId = id;
+
+    // Open modal and pre-fill with existing values
+    openModal();
+    document.querySelector(".modal-title").textContent = "Edit Task";
+    document.querySelector(".submit-task-btn").textContent = "Save Changes";
+
+    document.getElementById("todo-name").value = todo.name;
+    const hrs = Math.floor(todo.estimated_minutes / 60);
+    const mins = todo.estimated_minutes % 60;
+    document.getElementById("todo-hours").value = hrs;
+    document.getElementById("todo-minutes").value = mins;
+
+    // Set category
+    setCategory(todo.category || "university");
+    if (todo.category === "other" && todo.custom_category) {
+        customCategoryInput.value = todo.custom_category;
+    }
+
+    // Set course
+    if (todo.course) {
+        document.getElementById("todo-course").value = todo.course;
+    }
+
+    // Set priority and urgency
+    document.getElementById("todo-priority").value = todo.priority || "medium";
+    document.getElementById("todo-urgency").value = todo.urgency || "upcoming";
+
+    // Set deadline
+    document.getElementById("todo-deadline").value = todo.deadline || "";
+}
+
+function updateTodo(id, formData) {
+    const totalMins = (formData.hours * 60) + formData.minutes;
+    if (totalMins <= 0) return;
+
+    const data = loadData();
+    const todo = data.todos.find(t => t.id === id);
+    if (!todo) return;
+
+    todo.name = formData.name;
+    todo.estimated_minutes = totalMins;
+    todo.category = formData.category;
+    todo.custom_category = formData.customCategory;
+    todo.course = formData.course;
+    todo.priority = formData.priority;
+    todo.urgency = formData.urgency;
+    todo.deadline = formData.deadline;
+
     saveData(data);
     loadTodos();
 }
@@ -490,9 +584,15 @@ todoForm.addEventListener("submit", (e) => {
     const priority = document.getElementById("todo-priority").value;
     const urgency = document.getElementById("todo-urgency").value;
     const customCategory = selectedCategory === "other" ? customCategoryInput.value.trim() : "";
+    const deadline = document.getElementById("todo-deadline").value;
 
     if (name && (hours > 0 || mins > 0)) {
-        addTodo({ name, hours, minutes: mins, category: selectedCategory, customCategory, course, priority, urgency });
+        const formData = { name, hours, minutes: mins, category: selectedCategory, customCategory, course, priority, urgency, deadline };
+        if (editingTodoId) {
+            updateTodo(editingTodoId, formData);
+        } else {
+            addTodo(formData);
+        }
         closeModal();
     }
 });

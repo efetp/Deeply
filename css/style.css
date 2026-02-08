@@ -601,6 +601,80 @@ main {
     color: var(--deep);
 }
 
+/* Deadline display on right side */
+.todo-deadline {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    justify-content: center;
+    flex-shrink: 0;
+    margin-left: auto;
+    padding: 0.3rem 0.6rem;
+    border-radius: 0.5rem;
+    background: rgba(91, 155, 213, 0.08);
+    border: 1px solid rgba(91, 155, 213, 0.12);
+    min-width: 60px;
+    text-align: right;
+}
+
+.deadline-label {
+    font-size: 0.55rem;
+    font-weight: 500;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: rgba(91, 155, 213, 0.7);
+    line-height: 1;
+    margin-bottom: 0.15rem;
+}
+
+.deadline-date {
+    font-size: 0.82rem;
+    font-weight: 300;
+    letter-spacing: 0.5px;
+    color: var(--urgency-upcoming);
+    white-space: nowrap;
+}
+
+.todo-deadline.deadline-soon {
+    background: rgba(240, 165, 0, 0.08);
+    border-color: rgba(240, 165, 0, 0.15);
+}
+
+.todo-deadline.deadline-soon .deadline-label {
+    color: rgba(240, 165, 0, 0.7);
+}
+
+.todo-deadline.deadline-soon .deadline-date {
+    color: var(--medium);
+}
+
+.todo-deadline.deadline-today {
+    background: rgba(231, 76, 60, 0.08);
+    border-color: rgba(231, 76, 60, 0.15);
+}
+
+.todo-deadline.deadline-today .deadline-label {
+    color: rgba(231, 76, 60, 0.7);
+}
+
+.todo-deadline.deadline-today .deadline-date {
+    color: var(--deep);
+}
+
+.todo-deadline.deadline-overdue {
+    background: rgba(231, 76, 60, 0.12);
+    border-color: rgba(231, 76, 60, 0.2);
+}
+
+.todo-deadline.deadline-overdue .deadline-label {
+    color: rgba(231, 76, 60, 0.9);
+}
+
+.todo-deadline.deadline-overdue .deadline-date {
+    color: var(--deep);
+    font-weight: 500;
+}
+
 .todo-actions {
     display: flex;
     gap: 0.1rem;
@@ -627,6 +701,10 @@ main {
 .todo-action-btn:hover {
     background: rgba(255, 255, 255, 0.08);
     color: var(--text);
+}
+
+.todo-action-btn.edit-btn:hover {
+    color: var(--urgency-upcoming);
 }
 
 .todo-action-btn.select-btn:hover {
