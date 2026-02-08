@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:studywithme.io)",
+      "WebSearch"
+    ]
+  }
+}

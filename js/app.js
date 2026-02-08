@@ -1,8 +1,7 @@
 // ============================================================
-// Pomodoro Timer — Main Application Logic
+// Pomodoro Timer — Static Version (localStorage)
 // ============================================================
 
-// --- Mode Configurations ---
 const MODES = {
     light:  { work: 25, break: 5,  color: "#4ecca3" },
     medium: { work: 35, break: 7,  color: "#f0a500" },
@@ -35,7 +34,6 @@ const currentTaskName = document.getElementById("current-task-name");
 const statPomodoros = document.getElementById("stat-pomodoros");
 const statMinutes = document.getElementById("stat-minutes");
 
-// Modal elements
 const btnAddTask = document.getElementById("btn-add-task");
 const btnCloseModal = document.getElementById("btn-close-modal");
 const taskModal = document.getElementById("task-modal");
@@ -43,7 +41,6 @@ const catButtons = document.querySelectorAll(".cat-btn");
 const customCategoryInput = document.getElementById("custom-category");
 const courseGroup = document.getElementById("course-group");
 
-// Calendar elements
 const clockTime = document.getElementById("clock-time");
 const clockDate = document.getElementById("clock-date");
 const clockTimezone = document.getElementById("clock-timezone");
@@ -52,9 +49,30 @@ const calDays = document.getElementById("cal-days");
 const calPrev = document.getElementById("cal-prev");
 const calNext = document.getElementById("cal-next");
 
+const btnExport = document.getElementById("btn-export");
+const btnImport = document.getElementById("btn-import");
+const importFile = document.getElementById("import-file");
+
 const RING_CIRCUMFERENCE = 2 * Math.PI * 90;
 
-// --- Audio ---
+// ============================================================
+// LOCAL STORAGE HELPERS
+// ============================================================
+
+function loadData() {
+    const raw = localStorage.getItem("pomodoro_data");
+    if (!raw) return { todos: [], sessions: [] };
+    try { return JSON.parse(raw); } catch { return { todos: [], sessions: [] }; }
+}
+
+function saveData(data) {
+    localStorage.setItem("pomodoro_data", JSON.stringify(data));
+}
+
+// ============================================================
+// AUDIO
+// ============================================================
+
 let audioContext = null;
 
 function playAlertSound() {
@@ -62,7 +80,6 @@ function playAlertSound() {
         audioContext = new (window.AudioContext || window.webkitAudioContext)();
     }
     const now = audioContext.currentTime;
-
     function playTone(freq, start, duration) {
         const osc = audioContext.createOscillator();
         const gain = audioContext.createGain();
@@ -75,7 +92,6 @@ function playAlertSound() {
         osc.start(start);
         osc.stop(start + duration);
     }
-
     playTone(523, now, 0.3);
     playTone(659, now + 0.15, 0.3);
     playTone(784, now + 0.3, 0.5);
@@ -94,12 +110,10 @@ function formatTime(seconds) {
 function updateDisplay() {
     timerTime.textContent = formatTime(remainingSeconds);
     timerLabel.textContent = isBreak ? "BREAK" : "WORK";
-
     const progress = 1 - (remainingSeconds / totalSeconds);
     const offset = RING_CIRCUMFERENCE * (1 - progress);
     progressRing.style.strokeDasharray = RING_CIRCUMFERENCE;
     progressRing.style.strokeDashoffset = offset;
-
     document.title = `${formatTime(remainingSeconds)} — ${isBreak ? "Break" : "Work"} | Pomodoro`;
     document.body.classList.toggle("on-break", isBreak);
 }
@@ -108,12 +122,10 @@ function setMode(mode) {
     if (isRunning) return;
     currentMode = mode;
     const config = MODES[mode];
-
     modeButtons.forEach(btn => btn.classList.remove("active"));
     document.querySelector(`[data-mode="${mode}"]`).classList.add("active");
     document.documentElement.style.setProperty("--active-color", config.color);
     progressRing.style.stroke = config.color;
-
     isBreak = false;
     totalSeconds = config.work * 60;
     remainingSeconds = totalSeconds;
@@ -128,7 +140,6 @@ function startTimer() {
     modeButtons.forEach(btn => {
         if (!btn.classList.contains("active")) btn.disabled = true;
     });
-
     timerInterval = setInterval(() => {
         remainingSeconds--;
         updateDisplay();
@@ -152,9 +163,8 @@ function pauseTimer() {
 
 function resetTimer() {
     pauseTimer();
-    const config = MODES[currentMode];
     isBreak = false;
-    totalSeconds = config.work * 60;
+    totalSeconds = MODES[currentMode].work * 60;
     remainingSeconds = totalSeconds;
     updateDisplay();
     modeButtons.forEach(btn => btn.disabled = false);
@@ -186,31 +196,34 @@ function onTimerComplete() {
 }
 
 // ============================================================
-// SESSION LOGGING
+// SESSION LOGGING (localStorage)
 // ============================================================
 
-async function logSession() {
+function logSession() {
     const taskName = selectedTodoId
         ? document.querySelector(`[data-id="${selectedTodoId}"] .todo-name`)?.textContent || "Unnamed"
         : "No task selected";
 
-    await fetch("/api/sessions", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-            mode: currentMode,
-            task: taskName,
-            work_minutes: MODES[currentMode].work,
-        }),
+    const data = loadData();
+    data.sessions.push({
+        mode: currentMode,
+        task: taskName,
+        work_minutes: MODES[currentMode].work,
+        completed_at: new Date().toISOString(),
+        date: new Date().toISOString().split("T")[0],
     });
+    saveData(data);
     loadStats();
 }
 
-async function loadStats() {
-    const res = await fetch("/api/stats");
-    const stats = await res.json();
-    statPomodoros.textContent = `${stats.total_pomodoros} pomodoro${stats.total_pomodoros !== 1 ? "s" : ""}`;
-    statMinutes.textContent = `${stats.total_minutes} min focused`;
+function loadStats() {
+    const data = loadData();
+    const today = new Date().toISOString().split("T")[0];
+    const todaySessions = data.sessions.filter(s => s.date === today);
+    const totalMins = todaySessions.reduce((sum, s) => sum + (s.work_minutes || 0), 0);
+    const count = todaySessions.length;
+    statPomodoros.textContent = `${count} pomodoro${count !== 1 ? "s" : ""}`;
+    statMinutes.textContent = `${totalMins} min focused`;
 }
 
 // ============================================================
@@ -225,7 +238,6 @@ function openModal() {
 function closeModal() {
     taskModal.classList.add("hidden");
     todoForm.reset();
-    // Reset category to university
     selectedCategory = "university";
     catButtons.forEach(b => b.classList.remove("active"));
     document.querySelector('[data-category="university"]').classList.add("active");
@@ -237,15 +249,11 @@ function setCategory(category) {
     selectedCategory = category;
     catButtons.forEach(b => b.classList.remove("active"));
     document.querySelector(`[data-category="${category}"]`).classList.add("active");
-
-    // Toggle course field
     if (category === "university") {
         courseGroup.classList.remove("hidden");
     } else {
         courseGroup.classList.add("hidden");
     }
-
-    // Toggle custom input
     if (category === "other") {
         customCategoryInput.classList.remove("hidden");
         customCategoryInput.focus();
@@ -255,7 +263,7 @@ function setCategory(category) {
 }
 
 // ============================================================
-// TODO LIST
+// TODO LIST (localStorage)
 // ============================================================
 
 function calcPomodoros(minutes) {
@@ -284,23 +292,13 @@ function renderTodo(todo) {
     li.className = "todo-item";
     li.dataset.id = todo.id;
 
-    // Build tags
     let tagsHtml = "";
     const cat = todo.category || "university";
     const catLabel = cat === "other" && todo.custom_category ? todo.custom_category : cat;
     tagsHtml += `<span class="tag tag-category">${escapeHtml(catLabel)}</span>`;
-
-    if (todo.course) {
-        tagsHtml += `<span class="tag tag-course">${escapeHtml(todo.course)}</span>`;
-    }
-
-    if (todo.priority) {
-        tagsHtml += `<span class="tag tag-priority-${todo.priority}">${todo.priority}</span>`;
-    }
-
-    if (todo.urgency) {
-        tagsHtml += `<span class="tag tag-urgency-${todo.urgency}">${todo.urgency}</span>`;
-    }
+    if (todo.course) tagsHtml += `<span class="tag tag-course">${escapeHtml(todo.course)}</span>`;
+    if (todo.priority) tagsHtml += `<span class="tag tag-priority-${todo.priority}">${todo.priority}</span>`;
+    if (todo.urgency) tagsHtml += `<span class="tag tag-urgency-${todo.urgency}">${todo.urgency}</span>`;
 
     li.innerHTML = `
         <input type="checkbox" ${todo.completed ? "checked" : ""}>
@@ -329,48 +327,47 @@ function renderTodo(todo) {
     li.querySelector(".delete-btn").addEventListener("click", () => {
         deleteTodo(todo.id);
     });
-
     return li;
 }
 
-async function loadTodos() {
-    const res = await fetch("/api/todos");
-    const todos = await res.json();
+function loadTodos() {
+    const data = loadData();
     todoList.innerHTML = "";
-    todos.forEach(todo => todoList.appendChild(renderTodo(todo)));
+    data.todos.forEach(todo => todoList.appendChild(renderTodo(todo)));
 }
 
-async function addTodo(formData) {
+function addTodo(formData) {
     const totalMins = (formData.hours * 60) + formData.minutes;
     if (totalMins <= 0) return;
 
-    await fetch("/api/todos", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-            name: formData.name,
-            estimated_minutes: totalMins,
-            category: formData.category,
-            custom_category: formData.customCategory,
-            course: formData.course,
-            priority: formData.priority,
-            urgency: formData.urgency,
-        }),
+    const data = loadData();
+    data.todos.push({
+        id: Date.now(),
+        name: formData.name,
+        estimated_minutes: totalMins,
+        category: formData.category,
+        custom_category: formData.customCategory,
+        course: formData.course,
+        priority: formData.priority,
+        urgency: formData.urgency,
+        completed: false,
+        created_at: new Date().toISOString(),
     });
+    saveData(data);
     loadTodos();
 }
 
-async function toggleTodo(id, completed) {
-    await fetch(`/api/todos/${id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ completed }),
-    });
+function toggleTodo(id, completed) {
+    const data = loadData();
+    const todo = data.todos.find(t => t.id === id);
+    if (todo) { todo.completed = completed; saveData(data); }
     loadTodos();
 }
 
-async function deleteTodo(id) {
-    await fetch(`/api/todos/${id}`, { method: "DELETE" });
+function deleteTodo(id) {
+    const data = loadData();
+    data.todos = data.todos.filter(t => t.id !== id);
+    saveData(data);
     if (selectedTodoId === id) {
         selectedTodoId = null;
         currentTaskDiv.classList.add("hidden");
@@ -386,29 +383,49 @@ function selectTodo(id, name) {
 }
 
 // ============================================================
+// EXPORT / IMPORT
+// ============================================================
+
+function exportData() {
+    const data = loadData();
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `pomodoro-data-${new Date().toISOString().split("T")[0]}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+}
+
+function importData(file) {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+        try {
+            const data = JSON.parse(e.target.result);
+            if (data.todos && data.sessions) {
+                saveData(data);
+                loadTodos();
+                loadStats();
+            }
+        } catch {
+            alert("Invalid file format. Please select a valid Pomodoro export file.");
+        }
+    };
+    reader.readAsText(file);
+}
+
+// ============================================================
 // CLOCK & CALENDAR
 // ============================================================
 
 function updateClock() {
     const now = new Date();
-
-    // Time
     clockTime.textContent = now.toLocaleTimeString("en-US", {
-        hour: "2-digit",
-        minute: "2-digit",
-        second: "2-digit",
-        hour12: false,
+        hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false,
     });
-
-    // Date
     clockDate.textContent = now.toLocaleDateString("en-US", {
-        weekday: "long",
-        month: "long",
-        day: "numeric",
-        year: "numeric",
+        weekday: "long", month: "long", day: "numeric", year: "numeric",
     });
-
-    // Timezone
     const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
     const offset = now.toLocaleTimeString("en-US", { timeZoneName: "short" }).split(" ").pop();
     clockTimezone.textContent = `${tz} (${offset})`;
@@ -418,37 +435,29 @@ let calendarMonth = new Date().getMonth();
 let calendarYear = new Date().getFullYear();
 
 function renderCalendar() {
-    const months = ["January", "February", "March", "April", "May", "June",
-                    "July", "August", "September", "October", "November", "December"];
+    const months = ["January","February","March","April","May","June",
+                    "July","August","September","October","November","December"];
     calMonthYear.textContent = `${months[calendarMonth]} ${calendarYear}`;
 
     const firstDay = new Date(calendarYear, calendarMonth, 1).getDay();
     const daysInMonth = new Date(calendarYear, calendarMonth + 1, 0).getDate();
     const daysInPrev = new Date(calendarYear, calendarMonth, 0).getDate();
-
     const today = new Date();
     const isCurrentMonth = today.getMonth() === calendarMonth && today.getFullYear() === calendarYear;
 
     let html = "";
-
-    // Previous month trailing days
     for (let i = firstDay - 1; i >= 0; i--) {
         html += `<div class="cal-day other-month">${daysInPrev - i}</div>`;
     }
-
-    // Current month
     for (let d = 1; d <= daysInMonth; d++) {
         const isToday = isCurrentMonth && d === today.getDate();
         html += `<div class="cal-day${isToday ? " today" : ""}">${d}</div>`;
     }
-
-    // Next month leading days
     const totalCells = firstDay + daysInMonth;
     const remaining = totalCells % 7 === 0 ? 0 : 7 - (totalCells % 7);
     for (let i = 1; i <= remaining; i++) {
         html += `<div class="cal-day other-month">${i}</div>`;
     }
-
     calDays.innerHTML = html;
 }
 
@@ -456,7 +465,6 @@ function renderCalendar() {
 // EVENT LISTENERS
 // ============================================================
 
-// Timer
 btnStart.addEventListener("click", startTimer);
 btnPause.addEventListener("click", pauseTimer);
 btnReset.addEventListener("click", resetTimer);
@@ -464,52 +472,31 @@ modeButtons.forEach(btn => {
     btn.addEventListener("click", () => setMode(btn.dataset.mode));
 });
 
-// Modal
 btnAddTask.addEventListener("click", () => {
-    if (taskModal.classList.contains("hidden")) {
-        openModal();
-    } else {
-        closeModal();
-    }
+    taskModal.classList.contains("hidden") ? openModal() : closeModal();
 });
 btnCloseModal.addEventListener("click", closeModal);
 
-// Category buttons
 catButtons.forEach(btn => {
     btn.addEventListener("click", () => setCategory(btn.dataset.category));
 });
 
-// Form submit
 todoForm.addEventListener("submit", (e) => {
     e.preventDefault();
     const name = document.getElementById("todo-name").value.trim();
     const hours = parseInt(document.getElementById("todo-hours").value) || 0;
     const mins = parseInt(document.getElementById("todo-minutes").value) || 0;
-    const course = selectedCategory === "university"
-        ? document.getElementById("todo-course").value
-        : "";
+    const course = selectedCategory === "university" ? document.getElementById("todo-course").value : "";
     const priority = document.getElementById("todo-priority").value;
     const urgency = document.getElementById("todo-urgency").value;
-    const customCategory = selectedCategory === "other"
-        ? customCategoryInput.value.trim()
-        : "";
+    const customCategory = selectedCategory === "other" ? customCategoryInput.value.trim() : "";
 
     if (name && (hours > 0 || mins > 0)) {
-        addTodo({
-            name,
-            hours,
-            minutes: mins,
-            category: selectedCategory,
-            customCategory,
-            course,
-            priority,
-            urgency,
-        });
+        addTodo({ name, hours, minutes: mins, category: selectedCategory, customCategory, course, priority, urgency });
         closeModal();
     }
 });
 
-// Calendar nav
 calPrev.addEventListener("click", () => {
     calendarMonth--;
     if (calendarMonth < 0) { calendarMonth = 11; calendarYear--; }
@@ -520,6 +507,15 @@ calNext.addEventListener("click", () => {
     calendarMonth++;
     if (calendarMonth > 11) { calendarMonth = 0; calendarYear++; }
     renderCalendar();
+});
+
+btnExport.addEventListener("click", exportData);
+btnImport.addEventListener("click", () => importFile.click());
+importFile.addEventListener("change", (e) => {
+    if (e.target.files[0]) {
+        importData(e.target.files[0]);
+        e.target.value = "";
+    }
 });
 
 // ============================================================
