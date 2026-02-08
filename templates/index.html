@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pomodoro Timer</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@200;300;400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header>
+            <h1>Pomodoro Timer</h1>
+            <div id="stats-bar">
+                <span id="stat-pomodoros">0 pomodoros</span>
+                <span class="stat-divider">|</span>
+                <span id="stat-minutes">0 min focused</span>
+            </div>
+        </header>
+
+        <main>
+            <!-- Timer Section -->
+            <section class="timer-section glass-panel">
+                <!-- Mode Selector -->
+                <div class="mode-selector">
+                    <button class="mode-btn active" data-mode="light">Light</button>
+                    <button class="mode-btn" data-mode="medium">Medium</button>
+                    <button class="mode-btn" data-mode="deep">Deep</button>
+                </div>
+
+                <!-- Timer Ring -->
+                <div class="timer-ring-container">
+                    <svg class="timer-ring" viewBox="0 0 200 200">
+                        <circle class="timer-ring-bg" cx="100" cy="100" r="90" />
+                        <circle class="timer-ring-progress" cx="100" cy="100" r="90" />
+                    </svg>
+                    <div class="timer-display">
+                        <span id="timer-time">25:00</span>
+                        <span id="timer-label">WORK</span>
+                    </div>
+                </div>
+
+                <!-- Timer Controls -->
+                <div class="timer-controls">
+                    <button id="btn-start" class="control-btn primary">Start</button>
+                    <button id="btn-pause" class="control-btn" disabled>Pause</button>
+                    <button id="btn-reset" class="control-btn">Reset</button>
+                </div>
+
+                <!-- Current Task Indicator -->
+                <div id="current-task" class="current-task hidden">
+                    Working on: <strong id="current-task-name"></strong>
+                </div>
+            </section>
+
+            <!-- Todo Section -->
+            <section class="todo-section glass-panel">
+                <h2>Tasks</h2>
+
+                <!-- Add Todo Form -->
+                <form id="todo-form" class="todo-form">
+                    <div class="todo-form-row">
+                        <input type="text" id="todo-name" placeholder="What are you working on?" required>
+                    </div>
+                    <div class="todo-form-row">
+                        <div class="todo-duration">
+                            <input type="number" id="todo-hours" min="0" max="24" value="0" placeholder="h">
+                            <label>h</label>
+                            <input type="number" id="todo-minutes" min="0" max="59" value="30" placeholder="m">
+                            <label>m</label>
+                        </div>
+                        <button type="submit" class="control-btn primary">Add Task</button>
+                    </div>
+                </form>
+
+                <!-- Todo List -->
+                <ul id="todo-list" class="todo-list"></ul>
+            </section>
+        </main>
+    </div>
+
+    <!-- Flash overlay for timer completion -->
+    <div id="flash-overlay" class="flash-overlay"></div>
+
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>
