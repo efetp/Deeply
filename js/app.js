@@ -3,9 +3,9 @@
 // ============================================================
 
 const MODES = {
-    light:  { work: 25, break: 5,  color: "#4ecca3" },
-    medium: { work: 35, break: 7,  color: "#f0a500" },
-    deep:   { work: 50, break: 10, color: "#e74c3c" },
+    light: { work: 25, break: 5, color: "#4ecca3" },
+    medium: { work: 35, break: 7, color: "#f0a500" },
+    deep: { work: 50, break: 10, color: "#e74c3c" },
 };
 
 // --- State ---
@@ -636,8 +636,8 @@ async function getDeadlineDates() {
 }
 
 async function renderCalendar() {
-    const months = ["January","February","March","April","May","June",
-                    "July","August","September","October","November","December"];
+    const months = ["January", "February", "March", "April", "May", "June",
+        "July", "August", "September", "October", "November", "December"];
     calMonthYear.textContent = `${months[calendarMonth]} ${calendarYear}`;
 
     const firstDay = new Date(calendarYear, calendarMonth, 1).getDay();
@@ -687,7 +687,7 @@ async function renderCalendar() {
     const filterInfo = document.getElementById("cal-filter-info");
     if (selectedCalendarDate) {
         const d = new Date(selectedCalendarDate + "T00:00:00");
-        const monthNames = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+        const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
         filterInfo.innerHTML = `Showing tasks due <strong>${monthNames[d.getMonth()]} ${d.getDate()}</strong> <button id="cal-clear-filter" class="cal-clear-btn">&times;</button>`;
         filterInfo.classList.remove("hidden");
         document.getElementById("cal-clear-filter").addEventListener("click", async () => {
@@ -735,7 +735,7 @@ function setDeadlineValue(dateStr) {
     deadlineInput.value = dateStr;
     if (dateStr) {
         const d = new Date(dateStr + "T00:00:00");
-        const monthNames = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+        const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
         dpDisplay.textContent = `${monthNames[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
         dpDisplay.classList.add("has-value");
     } else {
@@ -745,8 +745,8 @@ function setDeadlineValue(dateStr) {
 }
 
 function renderDatepicker() {
-    const months = ["January","February","March","April","May","June",
-                    "July","August","September","October","November","December"];
+    const months = ["January", "February", "March", "April", "May", "June",
+        "July", "August", "September", "October", "November", "December"];
     dpMonthYear.textContent = `${months[dpMonth]} ${dpYear}`;
 
     const firstDay = new Date(dpYear, dpMonth, 1).getDay();
@@ -967,9 +967,28 @@ if (authForm) authForm.addEventListener("submit", async (e) => {
 
 (async () => {
     updateDisplay();
+
+    // Check for existing Supabase session before loading data
+    if (typeof sb !== "undefined" && sb) {
+        try {
+            const { data: { session } } = await sb.auth.getSession();
+            if (session?.user) {
+                currentUser = session.user;
+                updateAuthUI(true);
+                await migrateLocalStorageToSupabase(currentUser.id);
+            }
+        } catch (err) {
+            console.warn("Session check error:", err);
+        }
+    }
+
     await loadTodos();
     await loadStats();
     updateClock();
     setInterval(updateClock, 1000);
     await renderCalendar();
+
+    // Signal that init is done — auth listener can now handle changes
+    _appInitialized = true;
 })();
+

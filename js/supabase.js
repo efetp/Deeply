@@ -49,14 +49,23 @@ async function signUpWithEmail(email, password) {
     if (error) throw error;
 }
 
+let _authBusy = false;
+
 async function signOut() {
+    _authBusy = true;
+    currentUser = null;
+    updateAuthUI(false);
     if (!sb) {
-        currentUser = null;
+        _authBusy = false;
         return;
     }
-    const { error } = await sb.auth.signOut();
-    if (error) console.warn("Sign-out error:", error.message);
-    currentUser = null;
+    try {
+        const { error } = await sb.auth.signOut();
+        if (error) console.warn("Sign-out error:", error.message);
+    } catch (err) {
+        console.warn("Sign-out exception:", err);
+    }
+    _authBusy = false;
 }
 
 // ============================================================
@@ -192,25 +201,30 @@ async function migrateLocalStorageToSupabase(userId) {
     localStorage.setItem(flag, "1");
 }
 
-// ============================================================
-// AUTH STATE LISTENER
-// ============================================================
+// Flag to prevent auth listener from racing with app init
+let _appInitialized = false;
 
 if (sb) sb.auth.onAuthStateChange(async (event, session) => {
+    if (_authBusy) return; // skip if sign-out is in progress
+
     if (session?.user) {
         currentUser = session.user;
         updateAuthUI(true);
-        await migrateLocalStorageToSupabase(currentUser.id);
-        // Re-render with Supabase data
-        if (typeof loadTodos === "function") await loadTodos();
-        if (typeof loadStats === "function") await loadStats();
-        if (typeof renderCalendar === "function") await renderCalendar();
+        // Only reload data if app has already initialized (avoids double-load on startup)
+        if (_appInitialized) {
+            await migrateLocalStorageToSupabase(currentUser.id);
+            if (typeof loadTodos === "function") await loadTodos();
+            if (typeof loadStats === "function") await loadStats();
+            if (typeof renderCalendar === "function") await renderCalendar();
+        }
     } else {
         currentUser = null;
         updateAuthUI(false);
-        if (typeof loadTodos === "function") await loadTodos();
-        if (typeof loadStats === "function") await loadStats();
-        if (typeof renderCalendar === "function") await renderCalendar();
+        if (_appInitialized) {
+            if (typeof loadTodos === "function") await loadTodos();
+            if (typeof loadStats === "function") await loadStats();
+            if (typeof renderCalendar === "function") await renderCalendar();
+        }
     }
 });
 
@@ -223,7 +237,7 @@ function updateAuthUI(loggedIn) {
         authBar.classList.add("hidden");
         userBar.classList.remove("hidden");
         const userEmail = document.getElementById("user-email");
-        if (userEmail) userEmail.textContent = currentUser.email || "User";
+        if (userEmail) userEmail.textContent = currentUser?.email || "User";
     } else {
         authBar.classList.remove("hidden");
         userBar.classList.add("hidden");
