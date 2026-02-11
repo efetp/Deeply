@@ -410,8 +410,8 @@ function setCategory(category) {
 function calcPomodoros(minutes) {
     return {
         light: Math.ceil(minutes / MODES.light.work),
-        medium: Math.ceil(minutes / MODES.medium.work),
         deep: Math.ceil(minutes / MODES.deep.work),
+        custom: Math.ceil(minutes / (MODES.custom.work || 25)),
     };
 }
 
@@ -482,7 +482,6 @@ function renderTodo(todo) {
             <div class="todo-meta">${timeStr} estimated</div>
             <div class="todo-pomodoros">
                 <span class="pomo-badge light"><span class="pomo-count">${pomos.light}</span><span class="pomo-label"> light</span></span>
-                <span class="pomo-badge medium"><span class="pomo-count">${pomos.medium}</span><span class="pomo-label"> med</span></span>
                 <span class="pomo-badge deep"><span class="pomo-count">${pomos.deep}</span><span class="pomo-label"> deep</span></span>
             </div>
         </div>
