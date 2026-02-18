@@ -608,7 +608,7 @@ async function addTodo(formData) {
         if (cachedTodos) {
             // Fast path: cache ready — optimistic push, render instantly
             cachedTodos.push(todo);
-            supabaseAddTodo(todo); // fire-and-forget
+            supabaseAddTodo(todo).catch(() => { cachedTodos = null; loadTodos(); });
         } else {
             // Slow path: cache not ready (init still loading) — must await write
             await supabaseAddTodo(todo);
@@ -686,7 +686,7 @@ async function updateTodo(id, formData) {
         if (cachedTodos) {
             const cached = cachedTodos.find(t => t.id === id);
             if (cached) Object.assign(cached, updates);
-            supabaseUpdateTodo(id, updates); // fire-and-forget
+            supabaseUpdateTodo(id, updates).catch(() => { cachedTodos = null; loadTodos(); });
         } else {
             await supabaseUpdateTodo(id, updates);
             cachedTodos = null;
@@ -728,7 +728,7 @@ async function toggleTodo(id, completed) {
 
     if (currentUser) {
         if (cachedTodos) {
-            supabaseToggleTodo(id, completed, completedAt); // fire-and-forget
+            supabaseToggleTodo(id, completed, completedAt).catch(() => { cachedTodos = null; loadTodos(); });
         } else {
             await supabaseToggleTodo(id, completed, completedAt);
             cachedTodos = null;
@@ -752,7 +752,7 @@ async function deleteTodo(id) {
 
     if (currentUser) {
         if (cachedTodos) {
-            supabaseDeleteTodo(id); // fire-and-forget
+            supabaseDeleteTodo(id).catch(() => { cachedTodos = null; loadTodos(); });
         } else {
             await supabaseDeleteTodo(id);
             cachedTodos = null;
@@ -1566,4 +1566,14 @@ if (authForm) authForm.addEventListener("submit", async (e) => {
     // Signal that init is done — auth listener can now handle changes
     _appInitialized = true;
 })();
+
+// When tab regains focus after being hidden, invalidate cache so the next
+// action uses a fresh Supabase session (token may have expired while away).
+document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible" && _appInitialized) {
+        cachedTodos = null;     // force fresh fetch on next loadTodos()
+        loadTodos();            // re-populate cache with server data
+        renderCalendar();
+    }
+});
 
