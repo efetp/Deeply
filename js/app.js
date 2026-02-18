@@ -25,6 +25,7 @@ let selectedCalendarDate = null;
 let activeTab = "current";
 let matrixCategory = "university";
 let expandedQuadrants = new Set();
+let cachedTodos = null; // in-memory cache; null means stale/unloaded
 
 // --- DOM Elements ---
 const timerTime = document.getElementById("timer-time");
@@ -541,6 +542,8 @@ async function loadTodos() {
     }
     todos = todos.filter(t => !(t.completed && t.completed_at && t.completed_at < sevenDaysAgo));
 
+    cachedTodos = todos; // update in-memory cache with fresh data
+
     // Sort: tasks with deadlines first (nearest to furthest), then tasks without deadlines
     todos.sort((a, b) => {
         if (a.deadline && b.deadline) return a.deadline.localeCompare(b.deadline);
@@ -581,6 +584,7 @@ async function loadTodos() {
 }
 
 async function addTodo(formData) {
+    cachedTodos = null;
     const totalMins = (formData.hours * 60) + formData.minutes;
     if (totalMins <= 0) return;
 
@@ -607,13 +611,12 @@ async function addTodo(formData) {
     }
     await loadTodos();
     await renderCalendar();
-    await renderMatrix();
 }
 
 async function editTodo(id) {
     let todo;
     if (currentUser) {
-        const todos = await supabaseLoadTodos();
+        const todos = cachedTodos ?? await supabaseLoadTodos();
         todo = todos.find(t => t.id === id);
     } else {
         const data = loadData();
@@ -654,6 +657,7 @@ async function editTodo(id) {
 }
 
 async function updateTodo(id, formData) {
+    cachedTodos = null;
     const totalMins = (formData.hours * 60) + formData.minutes;
     if (totalMins <= 0) return;
 
@@ -686,10 +690,10 @@ async function updateTodo(id, formData) {
     }
     await loadTodos();
     await renderCalendar();
-    await renderMatrix();
 }
 
 async function toggleTodo(id, completed) {
+    cachedTodos = null;
     const completedAt = completed ? new Date().toISOString() : null;
 
     if (completed) {
@@ -719,6 +723,7 @@ async function toggleTodo(id, completed) {
 }
 
 async function deleteTodo(id) {
+    cachedTodos = null;
     if (currentUser) {
         await supabaseDeleteTodo(id);
     } else {
@@ -732,14 +737,20 @@ async function deleteTodo(id) {
     }
     await loadTodos();
     await renderCalendar();
-    await renderMatrix();
 }
 
-async function selectTodo(id, name) {
+function selectTodo(id, name) {
+    // Flip the previously-selected task's button back to "Select"
+    if (selectedTodoId && selectedTodoId !== id) {
+        const prev = todoList.querySelector(`[data-id="${selectedTodoId}"] .select-btn`);
+        if (prev) prev.textContent = "Select";
+    }
     selectedTodoId = id;
     currentTaskName.textContent = name;
     currentTaskDiv.classList.remove("hidden");
-    await loadTodos();
+    // Mark the newly-selected task's button as "Working"
+    const curr = todoList.querySelector(`[data-id="${id}"] .select-btn`);
+    if (curr) curr.textContent = "Working";
 }
 
 // ============================================================
@@ -811,14 +822,10 @@ function updateClock() {
 let calendarMonth = new Date().getMonth();
 let calendarYear = new Date().getFullYear();
 
-async function getDeadlineDates() {
-    if (currentUser) {
-        const dates = await supabaseGetDeadlineDates();
-        return new Set(dates);
-    }
-    const data = loadData();
+function getDeadlineDates() {
+    const source = cachedTodos ?? loadData().todos;
     const dates = new Set();
-    data.todos.forEach(t => { if (t.deadline) dates.add(t.deadline); });
+    source.forEach(t => { if (t.deadline && !t.completed) dates.add(t.deadline); });
     return dates;
 }
 
@@ -832,7 +839,7 @@ async function renderCalendar() {
     const daysInPrev = new Date(calendarYear, calendarMonth, 0).getDate();
     const today = new Date();
     const isCurrentMonth = today.getMonth() === calendarMonth && today.getFullYear() === calendarYear;
-    const deadlineDates = await getDeadlineDates();
+    const deadlineDates = getDeadlineDates();
 
     let html = "";
     for (let i = firstDay - 1; i >= 0; i--) {
@@ -893,11 +900,15 @@ async function renderCalendar() {
 
 async function renderMatrix() {
     let todos;
-    if (currentUser) {
+    if (cachedTodos !== null) {
+        todos = cachedTodos;
+    } else if (currentUser) {
         todos = await supabaseLoadTodos();
+        cachedTodos = todos;
     } else {
         const data = loadData();
         todos = data.todos;
+        cachedTodos = todos;
     }
 
     // Filter: only active tasks from selected category
