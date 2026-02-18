@@ -1404,8 +1404,10 @@ document.querySelectorAll(".duration-arrow").forEach(btn => {
     });
 });
 
-todoForm.addEventListener("submit", async (e) => {
-    e.preventDefault();
+// Safety net: block native submit if Enter is pressed in a form field
+todoForm.addEventListener("submit", (e) => e.preventDefault());
+
+document.querySelector(".submit-task-btn").addEventListener("click", async () => {
     const name = document.getElementById("todo-name").value.trim();
     const hours = parseInt(document.getElementById("todo-hours").value) || 0;
     const mins = parseInt(document.getElementById("todo-minutes").value) || 0;
