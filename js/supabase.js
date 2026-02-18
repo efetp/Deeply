@@ -91,8 +91,15 @@ async function signOut() {
 
 async function supabaseLoadTodos() {
     if (!currentUser) { console.warn("No user logged in"); return []; }
-    const { data, error } = await sb.from("todos").select("*").eq("user_id", currentUser.id).order("id", { ascending: true });
-    if (error) { console.warn("Load todos error:", error.message); return []; }
+    let { data, error } = await sb.from("todos").select("*").eq("user_id", currentUser.id).order("id", { ascending: true });
+    if (error) {
+        // Token may have expired — refresh session and retry once
+        await sb.auth.refreshSession();
+        const retry = await sb.from("todos").select("*").eq("user_id", currentUser.id).order("id", { ascending: true });
+        data = retry.data;
+        error = retry.error;
+        if (error) { console.warn("Load todos error:", error.message); return []; }
+    }
     return data.map(row => ({
         id: row.id,
         name: row.name,
@@ -110,7 +117,7 @@ async function supabaseLoadTodos() {
 }
 
 async function supabaseAddTodo(todo) {
-    const { error } = await sb.from("todos").insert({
+    const payload = {
         id: todo.id,
         user_id: currentUser.id,
         name: todo.name,
@@ -123,23 +130,41 @@ async function supabaseAddTodo(todo) {
         deadline: todo.deadline || "",
         completed: todo.completed || false,
         created_at: todo.created_at || new Date().toISOString()
-    });
-    if (error) console.warn("Add todo error:", error.message);
+    };
+    let { error } = await sb.from("todos").insert(payload);
+    if (error) {
+        await sb.auth.refreshSession();
+        const retry = await sb.from("todos").insert(payload);
+        if (retry.error) console.warn("Add todo error:", retry.error.message);
+    }
 }
 
 async function supabaseUpdateTodo(id, updates) {
-    const { error } = await sb.from("todos").update(updates).eq("id", id);
-    if (error) console.warn("Update todo error:", error.message);
+    let { error } = await sb.from("todos").update(updates).eq("id", id);
+    if (error) {
+        await sb.auth.refreshSession();
+        const retry = await sb.from("todos").update(updates).eq("id", id);
+        if (retry.error) console.warn("Update todo error:", retry.error.message);
+    }
 }
 
 async function supabaseDeleteTodo(id) {
-    const { error } = await sb.from("todos").delete().eq("id", id);
-    if (error) console.warn("Delete todo error:", error.message);
+    let { error } = await sb.from("todos").delete().eq("id", id);
+    if (error) {
+        await sb.auth.refreshSession();
+        const retry = await sb.from("todos").delete().eq("id", id);
+        if (retry.error) console.warn("Delete todo error:", retry.error.message);
+    }
 }
 
 async function supabaseToggleTodo(id, completed, completedAt) {
-    const { error } = await sb.from("todos").update({ completed, completed_at: completedAt }).eq("id", id);
-    if (error) console.warn("Toggle todo error:", error.message);
+    const payload = { completed, completed_at: completedAt };
+    let { error } = await sb.from("todos").update(payload).eq("id", id);
+    if (error) {
+        await sb.auth.refreshSession();
+        const retry = await sb.from("todos").update(payload).eq("id", id);
+        if (retry.error) console.warn("Toggle todo error:", retry.error.message);
+    }
 }
 
 async function supabaseLogSession(session) {
@@ -156,8 +181,14 @@ async function supabaseLogSession(session) {
 
 async function supabaseLoadSessions() {
     if (!currentUser) { console.warn("No user logged in"); return []; }
-    const { data, error } = await sb.from("sessions").select("*").eq("user_id", currentUser.id);
-    if (error) { console.warn("Load sessions error:", error.message); return []; }
+    let { data, error } = await sb.from("sessions").select("*").eq("user_id", currentUser.id);
+    if (error) {
+        await sb.auth.refreshSession();
+        const retry = await sb.from("sessions").select("*").eq("user_id", currentUser.id);
+        data = retry.data;
+        error = retry.error;
+        if (error) { console.warn("Load sessions error:", error.message); return []; }
+    }
     return data;
 }
 

@@ -1567,13 +1567,12 @@ if (authForm) authForm.addEventListener("submit", async (e) => {
     _appInitialized = true;
 })();
 
-// When tab regains focus after being hidden, invalidate cache so the next
-// action uses a fresh Supabase session (token may have expired while away).
+// When tab regains focus, invalidate cache so next user action fetches fresh.
+// Don't call loadTodos() here — the Supabase functions now auto-retry with
+// a refreshed session if the token expired, so the next action handles it.
 document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible" && _appInitialized) {
-        cachedTodos = null;     // force fresh fetch on next loadTodos()
-        loadTodos();            // re-populate cache with server data
-        renderCalendar();
+        cachedTodos = null;
     }
 });
 
