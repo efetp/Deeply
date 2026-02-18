@@ -604,15 +604,21 @@ async function addTodo(formData) {
         created_at: new Date().toISOString(),
     };
 
-    // Optimistic: update cache immediately so render is instant
-    if (cachedTodos) cachedTodos.push(todo);
-
     if (currentUser) {
-        supabaseAddTodo(todo); // fire-and-forget
+        if (cachedTodos) {
+            // Fast path: cache ready — optimistic push, render instantly
+            cachedTodos.push(todo);
+            supabaseAddTodo(todo); // fire-and-forget
+        } else {
+            // Slow path: cache not ready (init still loading) — must await write
+            await supabaseAddTodo(todo);
+            cachedTodos = null; // force fresh fetch
+        }
     } else {
         const data = loadData();
         data.todos.push(todo);
         saveData(data);
+        if (cachedTodos) cachedTodos.push(todo);
     }
     await loadTodos();
     await renderCalendar();
@@ -676,20 +682,25 @@ async function updateTodo(id, formData) {
         deadline: formData.deadline,
     };
 
-    // Optimistic: update cache immediately
-    if (cachedTodos) {
-        const cached = cachedTodos.find(t => t.id === id);
-        if (cached) Object.assign(cached, updates);
-    }
-
     if (currentUser) {
-        supabaseUpdateTodo(id, updates); // fire-and-forget
+        if (cachedTodos) {
+            const cached = cachedTodos.find(t => t.id === id);
+            if (cached) Object.assign(cached, updates);
+            supabaseUpdateTodo(id, updates); // fire-and-forget
+        } else {
+            await supabaseUpdateTodo(id, updates);
+            cachedTodos = null;
+        }
     } else {
         const data = loadData();
         const todo = data.todos.find(t => t.id === id);
         if (!todo) return;
         Object.assign(todo, updates);
         saveData(data);
+        if (cachedTodos) {
+            const cached = cachedTodos.find(t => t.id === id);
+            if (cached) Object.assign(cached, updates);
+        }
     }
     await loadTodos();
     await renderCalendar();
@@ -716,7 +727,12 @@ async function toggleTodo(id, completed) {
     }
 
     if (currentUser) {
-        supabaseToggleTodo(id, completed, completedAt); // fire-and-forget
+        if (cachedTodos) {
+            supabaseToggleTodo(id, completed, completedAt); // fire-and-forget
+        } else {
+            await supabaseToggleTodo(id, completed, completedAt);
+            cachedTodos = null;
+        }
     } else {
         const data = loadData();
         const todo = data.todos.find(t => t.id === id);
@@ -735,7 +751,12 @@ async function deleteTodo(id) {
     if (cachedTodos) cachedTodos = cachedTodos.filter(t => t.id !== id);
 
     if (currentUser) {
-        supabaseDeleteTodo(id); // fire-and-forget
+        if (cachedTodos) {
+            supabaseDeleteTodo(id); // fire-and-forget
+        } else {
+            await supabaseDeleteTodo(id);
+            cachedTodos = null;
+        }
     } else {
         const data = loadData();
         data.todos = data.todos.filter(t => t.id !== id);
@@ -1396,12 +1417,13 @@ todoForm.addEventListener("submit", async (e) => {
 
     if (name && (hours > 0 || mins > 0)) {
         const formData = { name, hours, minutes: mins, category: selectedCategory, customCategory, course, priority, urgency, deadline };
-        if (editingTodoId) {
-            await updateTodo(editingTodoId, formData);
+        const wasEditing = editingTodoId;
+        closeModal(); // close immediately for instant feedback
+        if (wasEditing) {
+            await updateTodo(wasEditing, formData);
         } else {
             await addTodo(formData);
         }
-        closeModal();
     }
 });
 
@@ -1527,32 +1549,19 @@ if (authForm) authForm.addEventListener("submit", async (e) => {
         }
     }
 
-    // Load data — errors must not block clock/calendar
-    try {
-        await loadTodos();
-    } catch (err) {
-        console.warn("Failed to load todos:", err);
-    }
-    try {
-        await loadStats();
-    } catch (err) {
-        console.warn("Failed to load stats:", err);
-    }
-
-    // These must always run regardless of data loading
+    // Start clock immediately (never blocks)
     updateClock();
     setInterval(updateClock, 1000);
 
-    try {
-        await renderCalendar();
-    } catch (err) {
-        console.warn("Failed to render calendar:", err);
-    }
-    try {
-        await renderMatrix();
-    } catch (err) {
-        console.warn("Failed to render matrix:", err);
-    }
+    // Load todos and stats in parallel — cuts init time in half
+    await Promise.all([
+        loadTodos().catch(err => console.warn("Failed to load todos:", err)),
+        loadStats().catch(err => console.warn("Failed to load stats:", err)),
+    ]);
+
+    // Calendar + matrix use cachedTodos so they must run after loadTodos
+    renderCalendar();
+    renderMatrix();
 
     // Signal that init is done — auth listener can now handle changes
     _appInitialized = true;
