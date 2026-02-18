@@ -263,14 +263,16 @@ if (sb) sb.auth.onAuthStateChange(async (event, session) => {
     if (session?.user) {
         currentUser = session.user;
         updateAuthUI(true);
-        // Only reload data if app has already initialized (avoids double-load on startup)
-        if (_appInitialized) {
+        // Only reload data on explicit sign-in (not TOKEN_REFRESHED which races
+        // with user actions after tab switch)
+        if (_appInitialized && event === "SIGNED_IN") {
             await migrateLocalStorageToSupabase(currentUser.id);
             if (typeof loadTodos === "function") await loadTodos();
             if (typeof loadStats === "function") await loadStats();
             if (typeof renderCalendar === "function") await renderCalendar();
         }
-    } else {
+    } else if (event === "SIGNED_OUT") {
+        // Only clear user on explicit sign-out, not transient auth events
         currentUser = null;
         updateAuthUI(false);
         if (_appInitialized) {
