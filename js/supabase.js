@@ -10,6 +10,17 @@ const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 let sb = null;
 let currentUser = null;
 
+// Timeout wrapper — converts hung network calls into catchable errors
+function withTimeout(promise, ms) {
+    let timer;
+    return Promise.race([
+        promise,
+        new Promise((_, reject) => {
+            timer = setTimeout(() => reject(new Error("Request timeout")), ms);
+        })
+    ]).finally(() => clearTimeout(timer));
+}
+
 if (window.supabase) {
     sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 } else {
@@ -91,14 +102,14 @@ async function signOut() {
 
 async function supabaseLoadTodos() {
     if (!currentUser) { console.warn("No user logged in"); return []; }
-    let { data, error } = await sb.from("todos").select("*").eq("user_id", currentUser.id).order("id", { ascending: true });
+    let { data, error } = await withTimeout(sb.from("todos").select("*").eq("user_id", currentUser.id).order("id", { ascending: true }), 8000);
     if (error) {
         // Token may have expired — refresh session and retry once
-        await sb.auth.refreshSession();
-        const retry = await sb.from("todos").select("*").eq("user_id", currentUser.id).order("id", { ascending: true });
+        await withTimeout(sb.auth.refreshSession(), 5000);
+        const retry = await withTimeout(sb.from("todos").select("*").eq("user_id", currentUser.id).order("id", { ascending: true }), 8000);
         data = retry.data;
         error = retry.error;
-        if (error) { console.warn("Load todos error:", error.message); return []; }
+        if (error) throw new Error("Load todos: " + error.message);
     }
     return data.map(row => ({
         id: row.id,
@@ -131,74 +142,74 @@ async function supabaseAddTodo(todo) {
         completed: todo.completed || false,
         created_at: todo.created_at || new Date().toISOString()
     };
-    let { error } = await sb.from("todos").insert(payload);
+    let { error } = await withTimeout(sb.from("todos").insert(payload), 8000);
     if (error) {
-        await sb.auth.refreshSession();
-        const retry = await sb.from("todos").insert(payload);
+        await withTimeout(sb.auth.refreshSession(), 5000);
+        const retry = await withTimeout(sb.from("todos").insert(payload), 8000);
         if (retry.error) console.warn("Add todo error:", retry.error.message);
     }
 }
 
 async function supabaseUpdateTodo(id, updates) {
-    let { error } = await sb.from("todos").update(updates).eq("id", id);
+    let { error } = await withTimeout(sb.from("todos").update(updates).eq("id", id), 8000);
     if (error) {
-        await sb.auth.refreshSession();
-        const retry = await sb.from("todos").update(updates).eq("id", id);
+        await withTimeout(sb.auth.refreshSession(), 5000);
+        const retry = await withTimeout(sb.from("todos").update(updates).eq("id", id), 8000);
         if (retry.error) console.warn("Update todo error:", retry.error.message);
     }
 }
 
 async function supabaseDeleteTodo(id) {
-    let { error } = await sb.from("todos").delete().eq("id", id);
+    let { error } = await withTimeout(sb.from("todos").delete().eq("id", id), 8000);
     if (error) {
-        await sb.auth.refreshSession();
-        const retry = await sb.from("todos").delete().eq("id", id);
+        await withTimeout(sb.auth.refreshSession(), 5000);
+        const retry = await withTimeout(sb.from("todos").delete().eq("id", id), 8000);
         if (retry.error) console.warn("Delete todo error:", retry.error.message);
     }
 }
 
 async function supabaseToggleTodo(id, completed, completedAt) {
     const payload = { completed, completed_at: completedAt };
-    let { error } = await sb.from("todos").update(payload).eq("id", id);
+    let { error } = await withTimeout(sb.from("todos").update(payload).eq("id", id), 8000);
     if (error) {
-        await sb.auth.refreshSession();
-        const retry = await sb.from("todos").update(payload).eq("id", id);
+        await withTimeout(sb.auth.refreshSession(), 5000);
+        const retry = await withTimeout(sb.from("todos").update(payload).eq("id", id), 8000);
         if (retry.error) console.warn("Toggle todo error:", retry.error.message);
     }
 }
 
 async function supabaseLogSession(session) {
-    const { error } = await sb.from("sessions").insert({
+    const { error } = await withTimeout(sb.from("sessions").insert({
         user_id: currentUser.id,
         mode: session.mode,
         task: session.task,
         work_minutes: session.work_minutes,
         completed_at: session.completed_at,
         date: session.date
-    });
+    }), 8000);
     if (error) console.warn("Log session error:", error.message);
 }
 
 async function supabaseLoadSessions() {
     if (!currentUser) { console.warn("No user logged in"); return []; }
-    let { data, error } = await sb.from("sessions").select("*").eq("user_id", currentUser.id);
+    let { data, error } = await withTimeout(sb.from("sessions").select("*").eq("user_id", currentUser.id), 8000);
     if (error) {
-        await sb.auth.refreshSession();
-        const retry = await sb.from("sessions").select("*").eq("user_id", currentUser.id);
+        await withTimeout(sb.auth.refreshSession(), 5000);
+        const retry = await withTimeout(sb.from("sessions").select("*").eq("user_id", currentUser.id), 8000);
         data = retry.data;
         error = retry.error;
-        if (error) { console.warn("Load sessions error:", error.message); return []; }
+        if (error) throw new Error("Load sessions: " + error.message);
     }
     return data;
 }
 
 async function supabaseGetDeadlineDates() {
     if (!currentUser) { console.warn("No user logged in"); return []; }
-    const { data, error } = await sb.from("todos")
+    const { data, error } = await withTimeout(sb.from("todos")
         .select("deadline")
         .neq("deadline", "")
         .eq("completed", false)
-        .eq("user_id", currentUser.id);
+        .eq("user_id", currentUser.id), 8000);
     if (error) { console.warn("Get deadlines error:", error.message); return []; }
     return data.map(r => r.deadline);
 }
@@ -263,8 +274,8 @@ if (sb) sb.auth.onAuthStateChange(async (event, session) => {
     if (session?.user) {
         currentUser = session.user;
         updateAuthUI(true);
-        if (_appInitialized) {
-            cachedTodos = null; // force fresh fetch (prevent stale cache)
+        if (_appInitialized && event === "SIGNED_IN") {
+            cachedTodos = null;
             await migrateLocalStorageToSupabase(currentUser.id);
             if (typeof loadTodos === "function") await loadTodos();
             if (typeof loadStats === "function") await loadStats();

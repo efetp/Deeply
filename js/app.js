@@ -3,7 +3,7 @@
 // ============================================================
 
 const MODES = {
-    light: { work: 25, break: 5, color: "#4ecca3" },
+    light: { work: 25, break: 5, color: "#3caed1ff" },
     deep: { work: 50, break: 10, color: "#e74c3c" },
     custom: { work: 25, break: 5, color: "#a78bfa" },
 };
@@ -26,6 +26,7 @@ let activeTab = "current";
 let matrixCategory = "university";
 let expandedQuadrants = new Set();
 let cachedTodos = null; // in-memory cache; null means stale/unloaded
+let _todosInflight = null; // dedup concurrent Supabase fetches
 
 // --- DOM Elements ---
 const timerTime = document.getElementById("timer-time");
@@ -348,7 +349,12 @@ async function logSession() {
 async function loadStats() {
     let sessions;
     if (currentUser) {
-        sessions = await supabaseLoadSessions();
+        try {
+            sessions = await supabaseLoadSessions();
+        } catch (e) {
+            console.warn("loadStats fetch failed:", e);
+            return;
+        }
     } else {
         sessions = loadData().sessions;
     }
@@ -527,10 +533,13 @@ async function loadTodos() {
         // Fresh fetch — only path that hits the network
         if (currentUser) {
             try {
-                todos = await supabaseLoadTodos();
+                if (!_todosInflight) _todosInflight = supabaseLoadTodos();
+                todos = await _todosInflight;
             } catch (e) {
                 console.warn("loadTodos fetch failed:", e);
                 return; // don't cache empty, don't clear DOM
+            } finally {
+                _todosInflight = null;
             }
         } else {
             todos = loadData().todos;
@@ -588,7 +597,7 @@ async function loadTodos() {
     }
 
     // Always update matrix when todos change
-    await renderMatrix();
+    renderMatrix();
 }
 
 async function addTodo(formData) {
@@ -934,18 +943,9 @@ async function renderCalendar() {
 // EISENHOWER MATRIX
 // ============================================================
 
-async function renderMatrix() {
-    let todos;
-    if (cachedTodos !== null) {
-        todos = cachedTodos;
-    } else if (currentUser) {
-        todos = await supabaseLoadTodos();
-        cachedTodos = todos;
-    } else {
-        const data = loadData();
-        todos = data.todos;
-        cachedTodos = todos;
-    }
+function renderMatrix() {
+    if (cachedTodos === null) return; // no data yet — keep current display
+    const todos = cachedTodos;
 
     // Filter: only active tasks from selected category
     const activeTasks = todos.filter(t =>
@@ -1578,6 +1578,9 @@ if (authForm) authForm.addEventListener("submit", async (e) => {
 document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible" && _appInitialized) {
         cachedTodos = null;
+        if (currentUser) {
+            loadTodos().catch(e => console.warn("Visibility refresh:", e));
+        }
     }
 });
 
